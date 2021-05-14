@@ -255,7 +255,7 @@ int* FindFileIndexByName(char* file){
     	
     	for(int k = 0; k < 32; k++){
     		if(strcmp(dirBlock->dirs[k].fileName,file) == 0){
-    			foundFreeDirEntry = 1;
+    			foundFileDirEntry = 1;
     			dirBlockIndex[0] = i;
     			dirBlockIndex[1] = k;
     			break;
@@ -542,6 +542,11 @@ int sfs_create(char *filename)
 	struct indexBlock* indexBlock = malloc(sizeof(struct indexBlock));
 	read_block(indexBlock,indexBlockIndex);
 	indexBlock->dataPtrs[0] = firstDataBlockIndex;
+	
+	for(int i = 1; i < 1024; i++){
+		indexBlock->dataPtrs[0] = -1;
+	}
+	
 	write_block(indexBlock,indexBlockIndex);
 	
 	printf("Free block index: %d\n",firstDataBlockIndex);
@@ -568,29 +573,118 @@ int sfs_open(char *file, int mode)
 	
 	openFiles[fd] = 1;
 	
-	struct Supernode* superblock = malloc(sizeof(struct Supernode));
-	read_block(superblock,0);
+	struct DirBlock* dirblock = malloc(sizeof(struct DirBlock));
+	read_block(dirblock,fileEntryIndex[0]);
 	
-	int dirsStartIndex = superblock->dirsStarIndex;
+	int* fcbIndex = dirblock->dirs[fileEntryIndex[1]].fcbBlockIndex;
 	
-	struct DirBLock* dirblock = malloc(sizeof(struct DirBlock));
-	read_block(superblock,0);
+	struct FcbBlock* fcbblock = malloc(sizeof(struct FcbBlock));
+	read_block(dirblock,fcbIndex[0]);
 	
+	fcbblock->fcbs[fcbIndex[1]].mode = mode;
 	
     return fd; 
 }
 
 int sfs_close(int fd){
-    return (0); 
+	if(openFiles[fd] == 0){
+		printf("sfs_close failed: File is not open!\n");
+		return -1;
+	}
+	
+	openFiles[fd] = 1;
+	
+    return 0; 
 }
 
 int sfs_getsize (int  fd)
 {
-    return (0); 
+	if(openFiles[fd] == 0){
+		printf("sfs_getsize failed: File is not open!\n");
+		return -1;
+	}
+	
+	struct Supernode* superblock = malloc(sizeof(struct Supernode));
+	read_block(superblock,0);
+	
+	int dirsStartIndex = superblock->dirsStartIndex;
+	
+	int fileBlockIndex = fd / 32 + dirsStartIndex;
+	int fileEntryIndex = fd % 32;
+	
+	struct DirBlock* dirblock = malloc(sizeof(struct DirBlock));
+	read_block(dirblock,fileBlockIndex);
+	
+	int* fcbIndex = dirblock->dirs[fileEntryIndex].fcbBlockIndex;
+	
+	struct FcbBlock* fcbblock = malloc(sizeof(struct FcbBlock));
+	read_block(dirblock,fcbIndex[0]);
+	
+	int filesize = fcbblock->fcbs[fcbIndex[1]].fileSize;
+	
+    return filesize; 
 }
 
 int sfs_read(int fd, void *buf, int n){
-    return (0); 
+	
+	if(openFiles[fd] == 0){
+		printf("sfs_read failed: File is not open!\n");
+		return -1;
+	}
+	
+	struct Supernode* superblock = malloc(sizeof(struct Supernode));
+	read_block(superblock,0);
+	
+	int dirsStartIndex = superblock->dirsStartIndex;
+	
+	int fileBlockIndex = fd / 32 + dirsStartIndex;
+	int fileEntryIndex = fd % 32;
+	
+	struct DirBlock* dirblock = malloc(sizeof(struct DirBlock));
+	read_block(dirblock,fileBlockIndex);
+	
+	int* fcbIndex = dirblock->dirs[fileEntryIndex].fcbBlockIndex;
+	
+	struct FcbBlock* fcbblock = malloc(sizeof(struct FcbBlock));
+	read_block(dirblock,fcbIndex[0]);
+	
+	int mode = fcbblock->fcbs[fcbIndex[1]].mode;
+	
+	if(mode != 0){
+		printf("sfs_read failed: file is not in read mode!\n");
+		return -1;
+	}
+	
+	if(fcbblock->fcbs[fcbIndex[1]].fileSize == 0){
+		return 0;
+	}
+	
+	int indexBlockIndex = fcbblock->fcbs[fcbIndex[1]].indexBlockIndex;
+	
+	struct indexBlock* indexBlock = malloc(sizeof(struct indexBlock));
+	read_block(indexBlock,indexBlockIndex);
+	
+	int bytesRead = 0;
+	char* buffer = (char *) buf;
+	
+	for(int i = 0; i < 1024; i++){
+		if(indexBlock->dataPtrs[i] == -1){
+			break;
+		}
+		
+		struct DataBlock* datablock = malloc(sizeof(struct DataBlock));
+		for(int k = 0; k < 4096; k++){
+			read_block(datablock,indexBlock->dataPtrs[i]);
+			buffer[i]= datablock->data[i];
+			bytesRead++;
+			
+			if(bytesRead >= n){
+				return bytesRead;
+			}
+		}
+	}
+	
+    return bytesRead  ; 
 }
 
 
