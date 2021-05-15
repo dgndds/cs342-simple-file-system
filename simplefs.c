@@ -23,7 +23,7 @@ struct Supernode{
 	int freeBlockCount;
 	int iBlockCount;
 	int fcbCount;
-	int freeInodeCount;
+	int freeDirCount;
 	int freeFcbCount;
 	int fcbStartIndex;
 	int dirsStartIndex;
@@ -129,10 +129,6 @@ void SetAvaibleBit(int index, int value){
 	int blockSize = 4096*8;
 	int blockIndex = ((index) / blockSize) + bitmapStartIndex;
 	int bitIndex = (index) % (blockSize);
-	
-	
-	printf("bitmap block Index: %d\n",blockIndex);
-	printf("bitmap bit Index: %d\n",bitIndex);
 	
 	struct bitmapBlock* bitmapBlock = malloc(sizeof(struct bitmapBlock));
 	read_block(bitmapBlock,blockIndex);
@@ -303,29 +299,18 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     
     //Set Superblock
     struct Supernode* superblock = malloc(sizeof(struct Supernode));
-    //printf("superblock size: %ld",sizeof(struct Supernode));
-    
-    /*
-    int blockCount;
-	int freeBlockCount;
-	int inodeCount;
-	int fcbCount;
-	int freeInodeCount;
-	int freeFcbCount;
-	int fcbStartIndex;
-	int dirsStartIndex;
-    */
+   
     superblock->blockCount = count;
     superblock->freeBlockCount = count;
     superblock->iBlockCount = 128;
     superblock->fcbCount = 128;
-    superblock->freeInodeCount = 128;
+    superblock->freeDirCount = 128;
     superblock->freeFcbCount = 128;
     superblock->fcbStartIndex = 9;
     superblock->dirsStartIndex = 5;
     superblock-> bitmapStartIndex = 1;
     
-    write_block(superblock,0);
+    
     
     //Set Bitmap
     for(int i = 1; i <= 4; i++){
@@ -349,10 +334,8 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     	}
     	
     	write_block(bitBlock,i);
+    	superblock->freeBlockCount--;
     }
-    
-    //printf("size of dir entry: %ld\n",sizeof(struct DirEntry));
-    //printf("size of dir block: %ld\n",sizeof(struct DirBlock));
     
     //Setup Directory Entries
     for(int i = 5; i <= 8; i++){
@@ -361,7 +344,6 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     	
     	for(int k = 0; k < 32; k++){
     		struct DirEntry dirEntry;
-    		//dirEntry->fileName = buff;
     		memcpy(dirEntry.fileName,"",1);
     		dirEntry.fcbBlockIndex[0] = -1;
     		dirEntry.fcbBlockIndex[1] = -1;
@@ -372,9 +354,6 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     	
     	write_block(dirBlock,i);
     }
-    
-    printf("size of fcb entry: %ld\n",sizeof(struct FCBEntry));
-    printf("size of fcb block: %ld\n",sizeof(struct FcbBlock));
     
     //Setup FCBs
     for(int i = 9; i <=12; i++){
@@ -394,35 +373,7 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     	write_block(fcbBlock,i);
     }
     
-    
-    /*struct FcbBlock* fcbBlock = malloc(sizeof(struct DirBlock));
-    read_block(fcbBlock,9);
-    
-    printf("avaible %d\n", fcbBlock->fcbs[5].avaible);
-    printf("index block index %d\n", fcbBlock->fcbs[5].indexBlockIndex);
-    printf("fileSize %d\n", fcbBlock->fcbs[5].fileSize);*/
-    
-    /*struct DirBlock* dirBlock = malloc(sizeof(struct DirBlock));
-    read_block(dirBlock,5);
-    
-    printf("filename %s\n", dirBlock->dirs[5].fileName);
-    printf("fcb index %d\n", dirBlock->dirs[5].fcbBlockIndex);*/
-    
-    /*for(int i = 1; i <= 4; i++){
-    	struct bitmapBlock* bitBlock = malloc(sizeof(struct bitmapBlock));
-    	read_block(bitBlock,i);
-    	
-    	for(int k = 0; k < 4096*8; k++){
-    		printf("%d",TestBitmapBit(bitBlock->bitmap,k));
-    	}
-    }*/
-    
-    /*struct Supernode* temp = malloc(sizeof(struct Supernode));
-    
-    read_block(temp,0);
-    
-    printf("inode count: %d\n",temp->inodeCount);*/
-    
+    write_block(superblock,0);
     sfs_umount();
     return (0); 
 }
@@ -450,29 +401,16 @@ int sfs_umount ()
 
 int sfs_create(char *filename)
 {	
-	//FILE *fp;
-	//fp  = 
-	//fopen (filename, "w");
-	//fclose (fp);
+	struct Supernode* superBlock = malloc(sizeof(struct Supernode));
+	read_block(superBlock,0);
 	
 	int* dirBlockIndex = FindFreeDirEntry();
-	
-	/*struct bitmapBlock* bitmapBlock = malloc(sizeof(struct bitmapBlock));
-	read_block(bitmapBlock,2);
-	
-	printf("bitmap:\n");
-	for(int i = 7230; i <=7235;i++){
-		printf("%d",TestBitmapBit(bitmapBlock->bitmap,i));
-	}*/
 	
 	if(dirBlockIndex[0] == -1 || dirBlockIndex[1] == -1){
 		printf("No free directory entries!\n");
 		printf("File creation failed! file: %s\n",filename);
 		return -1;
 	}
-	
-	//printf("block:%d\n",dirBlockIndex[0]);
-	//printf("depth:%d\n",dirBlockIndex[1]);
 	
 	int* fcbBlockIndex = FindFreeFcbEntry();
 	
@@ -491,43 +429,22 @@ int sfs_create(char *filename)
 	}
 	
 	SetAvaibleBit(indexBlockIndex,1);
+	superBlock->freeBlockCount--;
+	
 	
 	struct DirBlock* dirBlock = malloc(sizeof(struct DirBlock));
 	read_block(dirBlock,dirBlockIndex[0]);
 	
-	/*
-	int avaible;
-	char fileName[110];
-	int fcbBlockIndex;
-	*/
 	dirBlock->dirs[dirBlockIndex[1]].avaible = 0;
 	memcpy(dirBlock->dirs[dirBlockIndex[1]].fileName,filename,110);
-	//strcpy(dirBlock->dirs[dirBlockIndex[1]].fileName,fileName);
 	dirBlock->dirs[dirBlockIndex[1]].fcbBlockIndex[0] = fcbBlockIndex[0];
 	dirBlock->dirs[dirBlockIndex[1]].fcbBlockIndex[1] = fcbBlockIndex[1];
 	
 	write_block(dirBlock,dirBlockIndex[0]);
-	//printf("filename %s\n",dirBlock->dirs[dirBlockIndex[1]].fileName);
-	//printf("avaible %d\n",dirBlock->dirs[dirBlockIndex[1]].avaible);
-	//printf("fcb Block %d\n",dirBlock->dirs[dirBlockIndex[1]].fcbBlockIndex[0]);
-	//printf("fcb entry %d\n",dirBlock->dirs[dirBlockIndex[1]].fcbBlockIndex[1]);
-	
-	
-	//printf("free index block:%d\n",indexBlockIndex);
-	//printf("fcb block:%d\n",fcbBlockIndex[0]);
-	//printf("fcb depth:%d\n",fcbBlockIndex[1]);
+	superBlock->freeDirCount--;
 	
 	struct FcbBlock* fcbBlock = malloc(sizeof(struct FcbBlock));
 	read_block(fcbBlock,fcbBlockIndex[0]);
-	
-	/*
-	int avaible;
-	int indexBlockIndex;
-	int fileSize;
-	int lasPos[2];
-	int mode;
-	*/
-	
 	int firstDataBlockIndex = findFreeBlock();
 	
 	fcbBlock->fcbs[fcbBlockIndex[1]].avaible = 0;
@@ -540,6 +457,7 @@ int sfs_create(char *filename)
 	SetAvaibleBit(fcbBlockIndex[0],1);
 	
 	write_block(fcbBlock,fcbBlockIndex[0]);
+	superBlock->freeFcbCount--;
 	
 	
 	
@@ -547,14 +465,14 @@ int sfs_create(char *filename)
 	read_block(indexBlock,indexBlockIndex);
 	indexBlock->dataPtrs[0] = firstDataBlockIndex;
 	SetAvaibleBit(firstDataBlockIndex,1);
+	superBlock->freeBlockCount--;
 	
 	for(int i = 1; i < 1024; i++){
 		indexBlock->dataPtrs[i] = -1;
 	}
 	
 	write_block(indexBlock,indexBlockIndex);
-	
-	printf("Free block index: %d\n",firstDataBlockIndex);
+	write_block(superBlock,0);
 	
     return 0;
 }
@@ -611,6 +529,9 @@ int sfs_close(int fd){
 
 int sfs_getsize (int  fd)
 {
+	struct Supernode* superBlock = malloc(sizeof(struct Supernode));
+	read_block(superBlock,0);
+	
 	if(openFiles[fd] == 0){
 		printf("sfs_getsize failed: File is not open! fd: %d\n",fd);
 		return -1;
@@ -702,7 +623,6 @@ int sfs_read(int fd, void *buf, int n){
 
 int sfs_append(int fd, void *buf, int n)
 {
-	//printf("girdi fd: %d\n",fd);
 	if(openFiles[fd] == 0){
 		printf("sfs_append failed: File is not open! fd: %d\n",fd);
 		return -1;
@@ -754,12 +674,6 @@ int sfs_append(int fd, void *buf, int n)
 			if(bytesWritten >= n){
 				fcbblock->fcbs[fcbIndex[1]].lasPos[0] = i;
 				fcbblock->fcbs[fcbIndex[1]].lasPos[1] = k + 1;
-				/*read_block(fcbblock,fcbIndex[0]);
-				fcbblock->fcbs[fcbIndex[1]].fileSize = fcbblock->fcbs[fcbIndex[1]].fileSize + bytesWritten;
-				fcbblock->fcbs[fcbIndex[1]].lasPos[0]= lasPos[0];
-				fcbblock->fcbs[fcbIndex[1]].lasPos[1]= lasPos[1];
-				write_block(fcbblock,fcbIndex[0]);
-				return bytesWritten;*/
 				break;
 			}
 		}
@@ -772,6 +686,7 @@ int sfs_append(int fd, void *buf, int n)
 		int nextDataBlockIndex = findFreeBlock();
 		struct DataBlock* newdatablock = malloc(sizeof(struct DataBlock));
 		write_block(newdatablock,nextDataBlockIndex);
+		superblock->freeBlockCount--;
 		
 		int freeIndex = 0;
 			
@@ -791,12 +706,16 @@ int sfs_append(int fd, void *buf, int n)
 	
 	fcbblock->fcbs[fcbIndex[1]].fileSize = fcbblock->fcbs[fcbIndex[1]].fileSize + bytesWritten;
 	write_block(fcbblock,fcbIndex[0]);
+	write_block(superblock,0);
 	
     return bytesWritten; 
 }
 
 int sfs_delete(char *filename)
 {
+	struct Supernode* superblock = malloc(sizeof(struct Supernode));
+	read_block(superblock,0);
+	
 	int* fileEntryIndex = FindFileIndexByName(filename);
 	
 	if(fileEntryIndex[0] == -1 || fileEntryIndex[1] == -1){
@@ -804,11 +723,6 @@ int sfs_delete(char *filename)
 		return -1;
 	}
 	
-	/*
-	int avaible;
-	char fileName[110];
-	int fcbBlockIndex[2];
-	*/
 	struct DirBlock* dirblock = malloc(sizeof(struct DirBlock));
 	read_block(dirblock,fileEntryIndex[0]);
 	dirblock->dirs[fileEntryIndex[1]].avaible = 1;
@@ -817,13 +731,6 @@ int sfs_delete(char *filename)
 	
 	int* fcbIndex = dirblock->dirs[fileEntryIndex[1]].fcbBlockIndex;
 	
-	/*
-	int avaible;
-	int indexBlockIndex;
-	int fileSize;
-	int lasPos[2];
-	int mode;
-	*/
 	struct FcbBlock* fcbblock = malloc(sizeof(struct FcbBlock));
 	read_block(fcbblock,fcbIndex[0]);
 	fcbblock->fcbs[fcbIndex[1]].avaible = 1;
@@ -856,7 +763,7 @@ int sfs_delete(char *filename)
 	}
 	
 	write_block(indexBlock,indexBlockIndex);
-		
+	write_block(superblock,0);	
     return 0; 
 }
 
