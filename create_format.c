@@ -25,8 +25,6 @@ int main(int argc, char **argv)
         printf ("there was an error in creating the disk\n");
         exit(1); 
     }
-    
-    sfs_create ("file1.bin");
 
     printf ("disk created and formatted. %s %d\n", vdiskname, m); 
 }
